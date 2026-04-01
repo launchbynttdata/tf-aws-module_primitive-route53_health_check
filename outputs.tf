@@ -32,7 +32,7 @@ output "fqdn" {
 
 output "ip_address" {
   description = "The configured endpoint IP address, when applicable."
-  value       = aws_route53_health_check.health_check.ip_address
+  value       = aws_route53_health_check.health_check.ip_address == "" ? null : aws_route53_health_check.health_check.ip_address
 }
 
 output "port" {
@@ -52,12 +52,16 @@ output "failure_threshold" {
 
 output "resource_path" {
   description = "The configured resource path for HTTP/HTTPS checks, when applicable."
-  value       = aws_route53_health_check.health_check.resource_path
+  value = contains(["HTTP", "HTTPS", "HTTP_STR_MATCH", "HTTPS_STR_MATCH"], aws_route53_health_check.health_check.type) ? (
+    aws_route53_health_check.health_check.resource_path == "" ? null : aws_route53_health_check.health_check.resource_path
+  ) : null
 }
 
 output "search_string" {
   description = "The configured search string for *_STR_MATCH checks, when applicable."
-  value       = aws_route53_health_check.health_check.search_string
+  value = contains(["HTTP_STR_MATCH", "HTTPS_STR_MATCH"], aws_route53_health_check.health_check.type) ? (
+    aws_route53_health_check.health_check.search_string == "" ? null : aws_route53_health_check.health_check.search_string
+  ) : null
 }
 
 output "measure_latency" {
@@ -77,32 +81,38 @@ output "disabled" {
 
 output "enable_sni" {
   description = "Whether SNI is enabled for HTTPS checks."
-  value       = aws_route53_health_check.health_check.enable_sni
+  value       = contains(["HTTPS", "HTTPS_STR_MATCH"], aws_route53_health_check.health_check.type) ? aws_route53_health_check.health_check.enable_sni : null
 }
 
 output "child_healthchecks" {
   description = "Child health check IDs configured for CALCULATED checks."
-  value       = aws_route53_health_check.health_check.child_healthchecks
+  value       = aws_route53_health_check.health_check.type == "CALCULATED" ? aws_route53_health_check.health_check.child_healthchecks : null
 }
 
 output "child_health_threshold" {
   description = "Child health threshold configured for CALCULATED checks."
-  value       = aws_route53_health_check.health_check.child_health_threshold
+  value       = aws_route53_health_check.health_check.type == "CALCULATED" ? aws_route53_health_check.health_check.child_health_threshold : null
 }
 
 output "cloudwatch_alarm_name" {
   description = "CloudWatch alarm name configured for CLOUDWATCH_METRIC checks."
-  value       = aws_route53_health_check.health_check.cloudwatch_alarm_name
+  value = aws_route53_health_check.health_check.type == "CLOUDWATCH_METRIC" ? (
+    aws_route53_health_check.health_check.cloudwatch_alarm_name == "" ? null : aws_route53_health_check.health_check.cloudwatch_alarm_name
+  ) : null
 }
 
 output "cloudwatch_alarm_region" {
   description = "CloudWatch alarm region configured for CLOUDWATCH_METRIC checks."
-  value       = aws_route53_health_check.health_check.cloudwatch_alarm_region
+  value = aws_route53_health_check.health_check.type == "CLOUDWATCH_METRIC" ? (
+    aws_route53_health_check.health_check.cloudwatch_alarm_region == "" ? null : aws_route53_health_check.health_check.cloudwatch_alarm_region
+  ) : null
 }
 
 output "insufficient_data_health_status" {
   description = "Health status used when CloudWatch alarm data is insufficient."
-  value       = aws_route53_health_check.health_check.insufficient_data_health_status
+  value = aws_route53_health_check.health_check.type == "CLOUDWATCH_METRIC" ? (
+    aws_route53_health_check.health_check.insufficient_data_health_status == "" ? null : aws_route53_health_check.health_check.insufficient_data_health_status
+  ) : null
 }
 
 output "regions" {
@@ -112,12 +122,14 @@ output "regions" {
 
 output "reference_name" {
   description = "Route 53 caller reference name for the health check."
-  value       = aws_route53_health_check.health_check.reference_name
+  value       = var.reference_name == null ? null : aws_route53_health_check.health_check.reference_name
 }
 
 output "routing_control_arn" {
   description = "Routing control ARN configured for RECOVERY_CONTROL checks."
-  value       = aws_route53_health_check.health_check.routing_control_arn
+  value = aws_route53_health_check.health_check.type == "RECOVERY_CONTROL" ? (
+    aws_route53_health_check.health_check.routing_control_arn == "" ? null : aws_route53_health_check.health_check.routing_control_arn
+  ) : null
 }
 
 output "tags" {
