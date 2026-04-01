@@ -174,6 +174,11 @@ variable "reference_name" {
   description = "Optional caller reference name used by Route 53 for this health check."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.reference_name == null ? true : length(var.reference_name) <= 64
+    error_message = "reference_name must be 64 characters or fewer."
+  }
 }
 
 variable "routing_control_arn" {

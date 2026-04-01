@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -18,6 +17,20 @@ import (
 	"github.com/launchbynttdata/lcaf-component-terratest/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	expectedType            = "HTTPS"
+	expectedFQDN            = "aws.amazon.com"
+	expectedPort      int32 = 443
+	expectedInterval  int32 = 30
+	expectedThreshold int32 = 3
+	expectedPath            = "/"
+)
+
+var (
+	expectedRegions = []string{"eu-west-1", "us-east-1", "us-west-2"}
+	expectedTags    = map[string]string{"Example": "complete"}
 )
 
 func normalizeDNSName(s string) string {
@@ -47,18 +60,12 @@ func route53Client(t *testing.T) *r53.Client {
 	return r53.NewFromConfig(cfg)
 }
 
-func terraformBoolOutput(t *testing.T, opts *terraform.Options, name string) bool {
+func randomHex(t *testing.T, bytes int) string {
 	t.Helper()
-	value, err := strconv.ParseBool(terraform.Output(t, opts, name))
+	value := make([]byte, bytes)
+	_, err := rand.Read(value)
 	require.NoError(t, err)
-	return value
-}
-
-func terraformInt32Output(t *testing.T, opts *terraform.Options, name string) int32 {
-	t.Helper()
-	value, err := strconv.ParseInt(terraform.Output(t, opts, name), 10, 32)
-	require.NoError(t, err)
-	return int32(value)
+	return hex.EncodeToString(value)
 }
 
 func getHealthCheck(t *testing.T, client *r53.Client, healthCheckID string) *r53types.HealthCheck {
@@ -93,85 +100,79 @@ func verifyHealthCheckConfiguration(t *testing.T, testCtx types.TestContext, cli
 
 	opts := testCtx.TerratestTerraformOptions()
 	healthCheckID := terraform.Output(t, opts, "id")
-	expectedType := terraform.Output(t, opts, "type")
-	expectedFQDN := terraform.Output(t, opts, "fqdn")
-	expectedResourcePath := terraform.Output(t, opts, "resource_path")
-	expectedRegions := terraform.OutputList(t, opts, "regions")
-	expectedTags := terraform.OutputMap(t, opts, "expected_tags")
 
 	healthCheck := getHealthCheck(t, client, healthCheckID)
 	cfg := healthCheck.HealthCheckConfig
 
-	assert.Equal(t, expectedType, string(cfg.Type), "health check type should match terraform output")
-	assert.Equal(t, normalizeDNSName(expectedFQDN), normalizeDNSName(aws.ToString(cfg.FullyQualifiedDomainName)), "FQDN should match terraform output")
-	assert.Equal(t, terraformInt32Output(t, opts, "port"), aws.ToInt32(cfg.Port), "port should match terraform output")
-	assert.Equal(t, terraformInt32Output(t, opts, "request_interval"), aws.ToInt32(cfg.RequestInterval), "request interval should match terraform output")
-	assert.Equal(t, terraformInt32Output(t, opts, "failure_threshold"), aws.ToInt32(cfg.FailureThreshold), "failure threshold should match terraform output")
-	assert.Equal(t, expectedResourcePath, aws.ToString(cfg.ResourcePath), "resource path should match terraform output")
-	assert.Equal(t, terraformBoolOutput(t, opts, "measure_latency"), aws.ToBool(cfg.MeasureLatency), "measure_latency should match terraform output")
-	assert.Equal(t, terraformBoolOutput(t, opts, "invert_healthcheck"), aws.ToBool(cfg.Inverted), "invert_healthcheck should match terraform output")
-	assert.Equal(t, terraformBoolOutput(t, opts, "disabled"), aws.ToBool(cfg.Disabled), "disabled should match terraform output")
-	assert.Equal(t, terraformBoolOutput(t, opts, "enable_sni"), aws.ToBool(cfg.EnableSNI), "enable_sni should match terraform output")
+	assert.Equal(t, expectedType, string(cfg.Type), "health check type should match expected test fixture value")
+	assert.Equal(t, normalizeDNSName(expectedFQDN), normalizeDNSName(aws.ToString(cfg.FullyQualifiedDomainName)), "FQDN should match expected test fixture value")
+	assert.Equal(t, expectedPort, aws.ToInt32(cfg.Port), "port should match expected test fixture value")
+	assert.Equal(t, expectedInterval, aws.ToInt32(cfg.RequestInterval), "request interval should match expected test fixture value")
+	assert.Equal(t, expectedThreshold, aws.ToInt32(cfg.FailureThreshold), "failure threshold should match expected test fixture value")
+	assert.Equal(t, expectedPath, aws.ToString(cfg.ResourcePath), "resource path should match expected test fixture value")
+	assert.Nil(t, cfg.SearchString, "search_string should be unset for HTTPS checks")
+	assert.True(t, aws.ToBool(cfg.MeasureLatency), "measure_latency should match expected test fixture value")
+	assert.False(t, aws.ToBool(cfg.Inverted), "invert_healthcheck should match expected test fixture value")
+	assert.False(t, aws.ToBool(cfg.Disabled), "disabled should match expected test fixture value")
+	assert.True(t, aws.ToBool(cfg.EnableSNI), "enable_sni should match expected test fixture value")
 
 	gotRegions := make([]string, 0, len(cfg.Regions))
 	for _, region := range cfg.Regions {
 		gotRegions = append(gotRegions, string(region))
 	}
 	sort.Strings(gotRegions)
-	sort.Strings(expectedRegions)
-	assert.Equal(t, expectedRegions, gotRegions, "regions should match terraform output")
+	sortedExpectedRegions := append([]string{}, expectedRegions...)
+	sort.Strings(sortedExpectedRegions)
+	assert.Equal(t, sortedExpectedRegions, gotRegions, "regions should match expected test fixture value")
 
 	apiTags := getHealthCheckTags(t, client, healthCheckID)
 	for key, expectedValue := range expectedTags {
 		actualValue, ok := apiTags[key]
 		require.True(t, ok, "tag %s should be present", key)
-		assert.Equal(t, expectedValue, actualValue, "tag %s should match terraform output", key)
+		assert.Equal(t, expectedValue, actualValue, "tag %s should match expected test fixture value", key)
 	}
 }
 
-func createAndDeleteHealthCheck(t *testing.T, client *r53.Client) {
+// verifyManagedHealthCheckWrite mutates and reverts a tag on the deployed module-managed health check.
+func verifyManagedHealthCheckWrite(t *testing.T, testCtx types.TestContext, client *r53.Client) {
 	t.Helper()
 
-	var randomSuffix [4]byte
-	_, err := rand.Read(randomSuffix[:])
-	require.NoError(t, err)
+	opts := testCtx.TerratestTerraformOptions()
+	healthCheckID := terraform.Output(t, opts, "id")
+	writeTagKey := "terratest_write_probe"
+	writeTagValue := "ok-" + randomHex(t, 4)
 
-	callerReference := "terratest-write-" + hex.EncodeToString(randomSuffix[:])
-
-	createOut, err := client.CreateHealthCheck(context.Background(), &r53.CreateHealthCheckInput{
-		CallerReference: aws.String(callerReference),
-		HealthCheckConfig: &r53types.HealthCheckConfig{
-			Type:             r53types.HealthCheckTypeTcp,
-			IPAddress:        aws.String("1.1.1.1"),
-			Port:             aws.Int32(443),
-			RequestInterval:  aws.Int32(30),
-			FailureThreshold: aws.Int32(3),
+	_, err := client.ChangeTagsForResource(context.Background(), &r53.ChangeTagsForResourceInput{
+		ResourceId:   aws.String(healthCheckID),
+		ResourceType: r53types.TagResourceTypeHealthcheck,
+		AddTags: []r53types.Tag{
+			{
+				Key:   aws.String(writeTagKey),
+				Value: aws.String(writeTagValue),
+			},
 		},
 	})
 	require.NoError(t, err)
-	require.NotNil(t, createOut.HealthCheck)
-	require.NotNil(t, createOut.HealthCheck.Id)
 
-	createdHealthCheckID := aws.ToString(createOut.HealthCheck.Id)
 	t.Cleanup(func() {
-		_, deleteErr := client.DeleteHealthCheck(context.Background(), &r53.DeleteHealthCheckInput{
-			HealthCheckId: aws.String(createdHealthCheckID),
+		_, cleanupErr := client.ChangeTagsForResource(context.Background(), &r53.ChangeTagsForResourceInput{
+			ResourceId:    aws.String(healthCheckID),
+			ResourceType:  r53types.TagResourceTypeHealthcheck,
+			RemoveTagKeys: []string{writeTagKey},
 		})
-		assert.NoError(t, deleteErr)
+		assert.NoError(t, cleanupErr)
 	})
 
-	created := getHealthCheck(t, client, createdHealthCheckID)
-	require.NotNil(t, created.HealthCheckConfig)
-	assert.Equal(t, string(r53types.HealthCheckTypeTcp), string(created.HealthCheckConfig.Type), "write-test health check should use TCP type")
-	assert.Equal(t, "1.1.1.1", aws.ToString(created.HealthCheckConfig.IPAddress), "write-test health check should target the expected IP")
+	apiTags := getHealthCheckTags(t, client, healthCheckID)
+	assert.Equal(t, writeTagValue, apiTags[writeTagKey], "write test should update tags on the deployed health check")
 }
 
 // TestComposableComplete verifies deployed health-check configuration and performs write operations via the Route 53 API.
 func TestComposableComplete(t *testing.T, testCtx types.TestContext) {
 	client := route53Client(t)
 	verifyHealthCheckConfiguration(t, testCtx, client)
-	t.Run("route53ApiWrite", func(t *testing.T) {
-		createAndDeleteHealthCheck(t, client)
+	t.Run("route53ApiWriteOnManagedResource", func(t *testing.T) {
+		verifyManagedHealthCheckWrite(t, testCtx, client)
 	})
 }
 

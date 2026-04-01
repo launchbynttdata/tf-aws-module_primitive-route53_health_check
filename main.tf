@@ -45,52 +45,29 @@ resource "aws_route53_health_check" "health_check" {
     precondition {
       condition = contains(["HTTP_STR_MATCH", "HTTPS_STR_MATCH"], var.type) ? (
         var.search_string != null
-      ) : var.search_string == null
-      error_message = "search_string is required for *_STR_MATCH checks and must be null for other types."
+      ) : true
+      error_message = "search_string is required for HTTP_STR_MATCH and HTTPS_STR_MATCH checks."
     }
 
     precondition {
       condition = var.type == "CLOUDWATCH_METRIC" ? (
         var.cloudwatch_alarm_name != null && var.cloudwatch_alarm_region != null
-        ) : (
-        var.cloudwatch_alarm_name == null &&
-        var.cloudwatch_alarm_region == null &&
-        var.insufficient_data_health_status == null
-      )
-      error_message = "CLOUDWATCH_METRIC checks require cloudwatch_alarm_name and cloudwatch_alarm_region; those fields are invalid for other types."
+      ) : true
+      error_message = "CLOUDWATCH_METRIC checks require cloudwatch_alarm_name and cloudwatch_alarm_region."
     }
 
     precondition {
       condition = var.type == "CALCULATED" ? (
         var.child_healthchecks != null && var.child_health_threshold != null
-        ) : (
-        var.child_healthchecks == null && var.child_health_threshold == null
-      )
-      error_message = "CALCULATED checks require child_healthchecks and child_health_threshold; those fields are invalid for other types."
+      ) : true
+      error_message = "CALCULATED checks require child_healthchecks and child_health_threshold."
     }
 
     precondition {
       condition = var.type == "RECOVERY_CONTROL" ? (
         var.routing_control_arn != null
-      ) : var.routing_control_arn == null
-      error_message = "routing_control_arn is required for RECOVERY_CONTROL checks and must be null for other types."
-    }
-
-    precondition {
-      condition = contains(["CLOUDWATCH_METRIC", "CALCULATED", "RECOVERY_CONTROL"], var.type) ? (
-        var.port == null
       ) : true
-      error_message = "port must be null for CLOUDWATCH_METRIC, CALCULATED, and RECOVERY_CONTROL checks."
-    }
-
-    precondition {
-      condition     = var.enable_sni == null ? true : contains(["HTTPS", "HTTPS_STR_MATCH"], var.type)
-      error_message = "enable_sni is only valid for HTTPS and HTTPS_STR_MATCH checks."
-    }
-
-    precondition {
-      condition     = var.resource_path == null ? true : contains(["HTTP", "HTTPS", "HTTP_STR_MATCH", "HTTPS_STR_MATCH"], var.type)
-      error_message = "resource_path is only valid for HTTP, HTTPS, HTTP_STR_MATCH, and HTTPS_STR_MATCH checks."
+      error_message = "routing_control_arn is required for RECOVERY_CONTROL checks."
     }
   }
 }
