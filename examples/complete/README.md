@@ -43,10 +43,6 @@ module "route53_health_check" {
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | ~> 1.10 |
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.0 |
 
-## Providers
-
-No providers.
-
 ## Modules
 
 | Name | Source | Version |
