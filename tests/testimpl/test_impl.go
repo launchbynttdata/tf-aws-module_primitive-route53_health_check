@@ -99,7 +99,7 @@ func verifyHealthCheckConfiguration(t *testing.T, testCtx types.TestContext, cli
 	t.Helper()
 
 	opts := testCtx.TerratestTerraformOptions()
-	healthCheckID := terraform.Output(t, opts, "id")
+	healthCheckID := terraform.OutputContext(t, context.Background(), opts, "id")
 
 	healthCheck := getHealthCheck(t, client, healthCheckID)
 	cfg := healthCheck.HealthCheckConfig
@@ -138,7 +138,7 @@ func verifyManagedHealthCheckWrite(t *testing.T, testCtx types.TestContext, clie
 	t.Helper()
 
 	opts := testCtx.TerratestTerraformOptions()
-	healthCheckID := terraform.Output(t, opts, "id")
+	healthCheckID := terraform.OutputContext(t, context.Background(), opts, "id")
 	writeTagKey := "terratest_write_probe"
 	writeTagValue := "ok-" + randomHex(t, 4)
 
